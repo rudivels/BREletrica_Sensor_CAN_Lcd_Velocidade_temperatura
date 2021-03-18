@@ -10,7 +10,9 @@
                1 pulso = 8.30 / 40 = 0,2075 metro
   2021/03/16 - Mudando código para placa com Arduino Nano e CAN e fazendo a simulacao  
                com o AutoBoard
-               Implementando rotina CAN           
+               Implementando rotina CAN   
+  2021/03/18 - Mudando para biblioteca https://github.com/autowp/arduino-mcp2515 
+               que permite mandar extended 29 bit frames.                   
      
   Pinos do LCD 
   // lcd_E 9 
@@ -23,19 +25,14 @@
   
 */
 
-#include <Canbus.h>
-#include <defaults.h>
-#include <global.h>
+#include <SPI.h>
 #include <mcp2515.h>
-#include <mcp2515_defs.h>*/
-
 #include "U8glib.h"
 #include "MsTimer2.h"
 
-/* Retirando a implementacao com One Wire
-#include <OneWire.h>
-#include <DallasTemperature.h>
-*/
+struct can_frame canMsg1;
+MCP2515 mcp2515(10);
+
 char versao[10]="16mar21";
 
 int sensorPin_tensao_12v = A0;  
@@ -153,10 +150,11 @@ void setup(void) {
   delay(3000); 
   fim inicilizacao lcd*/ 
   Serial.begin(9600);
-  if(Canbus.init(CANSPEED_250))  //Initialise MCP2515 CAN controller at the specified speed
-    Serial.println("CAN Ok ");
-  else
-    Serial.println("CAN Failed ");
+  
+  mcp2515.reset();
+  mcp2515.setBitrate(CAN_125KBPS,MCP_8MHZ);
+  mcp2515.setNormalMode();
+
   delay(1000);
 }
 
@@ -167,40 +165,44 @@ void conta_pulsos() {
 
 void BaseDeTempo(void)
 {
+ /*medidido velocidade - desabilitado para fazer uma simulação 
  Velocidade_Int=contador_pulsos;
  contador_pulsos=0;
+ */ 
+ Velocidade_Int++;  // simulando 
 }
 
 unsigned char tp=0;
 
 void loop(void) {
 
-  tCAN message;
+
   le_temperatura();
   le_corrente_tensao();
-  tp++;
-  message.id = 0xFEBF;
-  message.header.rtr = 0;
-  message.header.length = 8; //formatted in DEC
-  message.data[0] = (Velocidade_Int >> 8) && 0x00FF;
-  message.data[1] = (Velocidade_Int && 0x00FF);
-  message.data[2] = 0xFF;
-  message.data[3] = 0xFF; 
-  message.data[4] = 0xFF;
-  message.data[5] = 0xFF;
-  message.data[6] = 0xFF;
-  message.data[7] = 0xFF;
-
-  mcp2515_bit_modify(CANCTRL, (1<<REQOP2)|(1<<REQOP1)|(1<<REQOP0), 0);
-  mcp2515_send_message(&message);
+  canMsg1.can_id = 0x10FEBF90 | CAN_EFF_FLAG;  //  testando com 0x90FEBF90 tambem funcionou
+  canMsg1.can_dlc = 8;
+  canMsg1.data[0] = (Velocidade_Int & 0x00FF);
+  canMsg1.data[1] = (Velocidade_Int >> 8) & 0x00FF;
+  canMsg1.data[2] = 0xFF;
+  canMsg1.data[3] = 0xFF;  
+  canMsg1.data[4] = 0xFF;  
+  canMsg1.data[5] = 0xFF;  
+  canMsg1.data[6] = 0xFF; 
+  canMsg1.data[7] = 0xFF;
+  mcp2515.sendMessage(&canMsg1);
   delay(100);
+  /* debug 
+  Serial.print(message.data[0]);    Serial.print("  "); Serial.print(message.data[1]); Serial.print("  "); 
+  Serial.println(Velocidade_Int); 
+  fim debug */
+  
   /* imprimindo no LCD 
   u8g.firstPage();  
   do {
       draw();   
   } while( u8g.nextPage() );
    Fim impressao LCD */
-  /* rotinas de leitura CAN */
+  /* rotinas de leitura CAN 
   if (mcp2515_check_message()) 
   {
     if (mcp2515_get_message(&message)) 
@@ -218,5 +220,5 @@ void loop(void) {
                Serial.println("");
      }
    }
-  /*fim rotina leitura CAN */
+  fim rotina leitura CAN */
 }
